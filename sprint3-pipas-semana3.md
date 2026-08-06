@@ -1,8 +1,8 @@
 # Sprint 3 — Semana 3: Frontend de Operación + Reportes
 
 - **Duración:** 5 días hábiles
-- **Objetivo:** Entregar el flujo operativo completo de Sandra (recibir solicitud → asignar → supervisar → reportar) y los reportes de combustible y tiempos de traslado.
-- **Branches:** `feature/pipas-dashboard`, `feature/pipas-catalogos`, `feature/pipas-reportes`.
+- **Objetivo:** Entregar el flujo operativo completo de Sandra (recibir solicitud → asignar → supervisar → reportar), la PWA del chofer pulida y los reportes de combustible y tiempos de traslado.
+- **Branches:** `feature/pipas-dashboard`, `feature/pipas-catalogos`, `feature/pipas-reportes`, `feature/pipas-pwa-pulido`.
 - **Dependencia:** Semanas 1 y 2 terminadas.
 
 ---
@@ -31,7 +31,7 @@
 
 ---
 
-## Jueves — Reportes
+## Jueves — Reportes y Pulido de la PWA
 
 | # | Tarea | Archivo destino | Definición de Terminado |
 |---|-------|-----------------|--------------------------|
@@ -40,6 +40,8 @@
 | 3.13 | Frontend: página de reporte de combustible con filtros y tabla de resultados | `frontend/src/pages/` | Muestra datos reales de la API |
 | 3.14 | Frontend: página de reporte de tiempos de traslado | `frontend/src/pages/` | Muestra datos reales de la API |
 | 3.15 | Exportar reportes a CSV/Excel y opción de imprimir (mismo patrón que `EstadosPage`) | `frontend/src/pages/` | Exportación funcional |
+| 3.16 | **Pulido PWA chofer**: estados de la entrega (Iniciar ruta, En pozo, Entregada), confirmación con botón y notificación al supervisor | `frontend/src/` | El chofer puede marcar avance desde su PWA |
+| 3.17 | **Notificaciones Push** de la PWA (opcional): aviso de nueva solicitud asignada al chofer | `frontend/` | Notificación llega con la app en segundo plano |
 
 ---
 
@@ -47,12 +49,12 @@
 
 | # | Tarea | Archivo destino | Definición de Terminado |
 |---|-------|-----------------|--------------------------|
-| 3.16 | Tests backend de los endpoints de reportes y del flujo completo | `backend/tests/` | Pytest verde |
-| 3.17 | Prueba E2E del flujo completo: alta de solicitud → asignación → Kanban → reporte | navegador | Todo el flujo operativo de Sandra funciona |
-| 3.18 | Validar permisos por rol (solo roles con `solicitudes.gestionar` pueden cambiar estados) | `backend/app/api/v1/` | Roles sin permiso reciben 403 |
-| 3.19 | Correr `pytest` + `npm run build` y revisar `pre-commit` | terminal | Todo verde |
-| 3.20 | Actualizar `servicios.md` y `documentacion/` con endpoints y pasos de configuración de OSRM/WebSocket | `documentacion/` | Documentación al día |
-| 3.21 | PR a `feature/pipas-semana3` y preparar demo funcional | GitHub | PR mergeado + demo grabada/lista |
+| 3.18 | Tests backend de los endpoints de reportes y del flujo completo | `backend/tests/` | Pytest verde |
+| 3.19 | Prueba E2E del flujo completo: alta de solicitud → asignación → Kanban → chofer en PWA → reporte | navegador | Todo el flujo operativo de Sandra funciona |
+| 3.20 | Validar permisos por rol (solo roles con `solicitudes.gestionar` pueden cambiar estados) | `backend/app/api/v1/` | Roles sin permiso reciben 403 |
+| 3.21 | Correr `pytest` + `npm run build` (PWA con SW) y revisar `pre-commit` | terminal | Todo verde |
+| 3.22 | Actualizar `servicios.md` y `documentacion/` con endpoints, WebSocket, OSRM y configuración de la PWA | `documentacion/` | Documentación al día |
+| 3.23 | PR a `feature/pipas-semana3` y preparar demo funcional | GitHub | PR mergeado + demo grabada/lista |
 
 ---
 
@@ -61,8 +63,9 @@
 1. Kanban funcional: Sandra puede cambiar estados con drag & drop y ver el flujo completo.
 2. CRUD de catálogos (vehículos, marcas, pozos, solicitudes, combustible) operando contra la API.
 3. Reportes de combustible y tiempos de traslado con datos reales y exportación.
-4. Control de permisos por rol aplicado.
-5. Documentación actualizada y demo funcional entregada.
+4. La PWA del chofer permite marcar avance de la entrega y notificar.
+5. Control de permisos por rol aplicado.
+6. Documentación actualizada y demo funcional entregada.
 
 ## Comandos útiles
 
@@ -70,5 +73,5 @@
 docker-compose up -d --build
 docker-compose exec backend pytest
 npm --prefix frontend run dev   # desarrollo
-npm --prefix frontend run build # producción
+npm --prefix frontend run build # producción (genera PWA)
 ```
