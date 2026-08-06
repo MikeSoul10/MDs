@@ -224,6 +224,10 @@ async def test_transicion_invalida(client: AsyncClient, auth_headers):
 
     # Entregada -> Pendiente NO es valida
     r = await client.patch(
+        f"{PREFIX}/{sid}/estado", headers=auth_headers, json={"estado_nuevo": "En Ruta"}
+    )
+    assert r.status_code == 200
+    r = await client.patch(
         f"{PREFIX}/{sid}/estado", headers=auth_headers, json={"estado_nuevo": "Entregada"}
     )
     assert r.status_code == 200
