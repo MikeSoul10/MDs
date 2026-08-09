@@ -37,11 +37,11 @@ Agrega al final de `services:` (antes de `volumes:`):
     volumes:
       - osrm-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS 'http://localhost:5000/nearest/v1/driving/-103.5,19.2' || exit 1"]
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/5000' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 60s
     networks:
       - dapa-network
 ```
