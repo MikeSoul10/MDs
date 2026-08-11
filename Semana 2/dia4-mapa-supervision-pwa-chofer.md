@@ -73,6 +73,14 @@ offline; `npm run build` del frontend y `pytest` del backend en verde.
 
 ## TAREA 2.17 — Instalar leaflet + react-leaflet (EN DOCKER)
 
+> **ADVERTENCIA (ya corregido en el repo):** el paquete se llama `leaflet`, NO `leaf`. Con el typo
+> `"leaf": "^1.9.4"` npm instala un paquete distinto y `import 'leaflet'` nunca resuelve.
+> `frontend/package.json` y `frontend/package-lock.json` YA estan montados en el compose
+> (misma mecanica que `vite.config.js`), asi que `docker compose exec frontend npm install <paquete>`
+> ahora PERSISTE los cambios al `package.json`/`package-lock.json` del repo. De todas formas, la
+> instalacion durable en la imagen se hace con `docker compose up -d --build frontend` (npm install
+> dentro del Dockerfile).
+
 1. Editar `frontend/package.json` agregando en `dependencies`:
 
 ```json
@@ -86,7 +94,8 @@ offline; `npm run build` del frontend y `pytest` del backend en verde.
 docker compose up -d --build frontend
 ```
 
-> Alternativa en caliente (solo para el dev, la imagen se vuelve a instalar al final):
+> Alternativa en caliente (persiste al repo gracias a los montajes, pero la imagen se vuelve a
+> instalar en el build final):
 > `docker compose exec frontend npm install leaflet@^1.9.4 react-leaflet@^4.2.1`
 
 3. Verificar:
