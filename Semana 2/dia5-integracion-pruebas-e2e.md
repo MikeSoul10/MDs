@@ -134,6 +134,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: true,
     proxy: {
       '/api': { target: 'http://backend:8000', changeOrigin: true },
       '/ws': { target: 'ws://backend:8000', ws: true, changeOrigin: true },
@@ -142,6 +143,7 @@ export default defineConfig({
   preview: {
     port: 4173,
     host: true,
+    allowedHosts: true,
     proxy: {
       '/api': { target: 'http://backend:8000', changeOrigin: true },
       '/ws': { target: 'ws://backend:8000', ws: true, changeOrigin: true },
@@ -153,6 +155,12 @@ export default defineConfig({
 > `preview` se usa en 2.29 para probar la PWA contra el build de produccion (`dist/`) sin romper
 > el API ni el WebSocket. Cambiar `vite.config.js` requiere reiniciar el server de Vite:
 > `docker compose restart frontend`.
+>
+> **IMPORTANTE — `allowedHosts` (Vite 5)**: el dev server bloquea con `403 "Blocked request. This
+> host (...)"` las peticiones cuyo `Host` no este en `server.allowedHosts`. Sin `allowedHosts: true`
+> (o `['localhost','frontend']`), cualquier acceso al frontend por un hostname distinto de
+> `localhost` (p. ej. `http://frontend:3000` desde otro contenedor, o el IP de la maquina) falla.
+> Se incluye `allowedHosts: true` en `server` y `preview`.
 
 ### 2. `frontend/src/services/api.js` — base relativa
 
