@@ -52,8 +52,10 @@ por columna, acciones que persisten en BD y drag & drop funcional; `npm run buil
     folio + vehículo + hora de entrega + estado (el campo domicilio se puede dejar como "—" o
     agregarse cuando exista el endpoint).
 - **Servicios frontend ya existentes**: `frontend/src/services/solicitudesService.js` tiene
-  `getSolicitudes(params)` y `cambiarEstadoSolicitud(id, body)`. **Falta** `vehiculosService.js`
-  (se crea en la tarea 3.1).
+  `getSolicitudes(params)` y `cambiarEstadoSolicitud(id, body)`. `frontend/src/services/vehiculoService.js`
+  ya existe con `getVehiculos(params)` y `getVehiculosDisponibles()` (nombre del archivo en singular,
+  `vehiculoService.js`). **OJO**: el import de `getVehiculos` y de `cambiarEstadoSolicitud` es obligatorio
+  en `DashboardPipas.jsx` (omisiones que rompen el build).
 - **Frontend**: React 18 + Vite 5 + Tailwind + react-router-dom v6 + `lucide-react` ^0.400 +
   `recharts`. NO hay librería de drag & drop instalada. Para evitar dependencias nuevas se usa
   **HTML5 drag & drop nativo** (`draggable`, `onDragStart`, `onDrop`). Si el equipo prefiere
@@ -70,7 +72,7 @@ por columna, acciones que persisten en BD y drag & drop funcional; `npm run buil
 
 ## TAREA 3.1 — `DashboardPipas.jsx` (tablero Kanban)
 
-1. Crear `frontend/src/services/vehiculosService.js`:
+1. Verificar `frontend/src/services/vehiculoService.js` (ya existe; si no, crearlo):
 
 ```js
 import { api } from './api';
@@ -89,8 +91,10 @@ export function getVehiculosDisponibles() {
 
 ```jsx
 import { useEffect, useState } from 'react';
-import { Truck, Droplets } from 'lucide-react';
-import { getSolicitudes } from '../services/solicitudesService';
+import { Truck } from 'lucide-react';
+import { getSolicitudes, cambiarEstadoSolicitud } from '../services/solicitudesService';
+import { getVehiculos } from '../services/vehiculoService';
+import { asignacionAutomatica } from '../services/asignacionesService';
 import SolicitudCard from '../components/common/SolicitudCard';
 
 const COLUMNAS = ['Pendiente', 'En Ruta', 'Entregada', 'Cancelada'];
@@ -102,7 +106,6 @@ export default function DashboardPipas() {
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
   const [vehiculoFiltro, setVehiculoFiltro] = useState('');
-  const [draggingId, setDraggingId] = useState(null); // 3.4
 
   const cargar = () => {
     setLoading(true);
@@ -226,18 +229,17 @@ expone las acciones correspondientes según el estado.
 
 ## TAREA 3.3 — Acciones de la tarjeta
 
-En `DashboardPipas.jsx`, implementar los tres handlers y pasarlos a `SolicitudCard`:
+En `DashboardPipas.jsx`, implementar los tres handlers DENTRO del componente (acceden a `solicitudes`
+y a `cargar`) y pasarlos a `SolicitudCard`:
 
 ```jsx
-import { asignacionAutomatica } from '../services/asignacionesService';
-
-const recargar = () => cargar();
-
 // Asignar vehículo -> POST /asignaciones/automatica
+// NOTA: asigna el vehículo más cercano pero NO cambia el estado; la solicitud
+// queda "Pendiente" con el vehículo visible. Pasar a "En Ruta" es drag & drop o Cambiar estado.
 const onAsignar = async (s) => {
   try {
-    await asignacionAutomatica(s.spp_id);   // asigna el vehículo más cercano
-    recargar();
+    await asignacionAutomatica(s.spp_id);
+    cargar();
   } catch (err) { alert(err.message); }
 };
 
@@ -245,7 +247,7 @@ const onAsignar = async (s) => {
 const onEstado = async (s, estadoNuevo) => {
   try {
     await cambiarEstadoSolicitud(s.spp_id, { estado_nuevo: estadoNuevo });
-    recargar();
+    cargar();
   } catch (err) { alert(err.message); }
 };
 
@@ -254,7 +256,7 @@ const onCancelar = (s) => {
   const motivo = window.prompt('Motivo de cancelacion:');
   if (!motivo) return;
   cambiarEstadoSolicitud(s.spp_id, { estado_nuevo: 'Cancelada', motivo })
-    .then(recargar)
+    .then(cargar)
     .catch((err) => alert(err.message));
 };
 ```
@@ -262,7 +264,8 @@ const onCancelar = (s) => {
 Notas:
 - **Asignar** solo aplica a solicitudes `Pendiente` con coordenadas; si la solicitud no tiene
   `spp_latitud`/`spp_longitud` el backend regresa 400 ("No tiene coordenadas"). Para la prueba
-  manual se puede setear directo en BD (ver Verificación).
+  manual se puede setear directo en BD (ver Verificación). **Asignar NO cambia el estado**: la
+  tarjeta sigue en "Pendiente" mostrando el vehículo asignado; luego se arrastra a "En Ruta".
 - **Cancelar** pide motivo antes de llamar al endpoint (se registra en `historial_solicitud`).
 - **OJO con el 400**: el backend valida las transiciones; si `estado_nuevo` no es válido desde el
   estado actual, la llamada falla y se muestra el error (no romper el tablero, luego recargar).
@@ -275,7 +278,8 @@ Notas:
 
 Con HTML5 nativo, sin librería:
 
-1. En `DashboardPipas.jsx`, un handler por columna (los mismos para las 4):
+1. En `DashboardPipas.jsx`, un handler por columna (los mismos para las 4). OJO: todos dentro del
+   componente; el `cargar()` refresca el tablero tras el cambio:
 
 ```jsx
 const onDragOver = (e) => e.preventDefault();
@@ -291,8 +295,7 @@ const onDrop = async (e, estadoDestino) => {
   } catch (err) {
     alert(err.message); // transición inválida -> el backend responde 400
   }
-  recargar();
-  setDraggingId(null);
+  cargar();
 };
 ```
 
@@ -375,8 +378,8 @@ docker compose exec db psql -U postgres -d dapatlqdb -c "UPDATE solicitudpipas S
 Chequeos manuales (navegador):
 1. `http://localhost:3000/pipas` (login `admin` / `admin123`): las 4 columnas con tarjetas
    agrupadas por estado y contadores.
-2. Columna "Pendiente": botón **Asignar** llama a `POST /asignaciones/automatica` y mueve la
-   tarjeta a "En Ruta" (vehículo asignado visible en la tarjeta).
+2. Columna "Pendiente": botón **Asignar** llama a `POST /asignaciones/automatica`; la tarjeta sigue
+   en "Pendiente" pero ahora muestra el vehículo asignado (el estado NO cambia con este endpoint).
 3. Columna "En Ruta": botón **Marcar entregada** pasa la solicitud a "Entregada".
 4. Botón **Cancelar** pide motivo y la tarjeta pasa a "Cancelada".
 5. Drag & drop: arrastrar una tarjeta Pendiente a "En Ruta" y otra "En Ruta" a "Entregada";
