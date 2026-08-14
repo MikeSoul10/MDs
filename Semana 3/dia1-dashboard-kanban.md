@@ -109,7 +109,7 @@ export default function DashboardPipas() {
 
   const cargar = () => {
     setLoading(true);
-    getSolicitudes({ page: 1, page_size: 200 })
+    getSolicitudes({ page: 1, page_size: 100 }) // OJO: el endpoint limita page_size a 100 (422 si se pasa)
       .then((d) => setSolicitudes(d.items))
       .catch(console.error)
       .finally(() => setLoading(false));
