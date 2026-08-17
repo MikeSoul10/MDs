@@ -1,6 +1,6 @@
 # HOJA DE INSTRUCCIONES — MODULO DE PIPAS — SPRINT 3 — DIA 3 (MIERCOLES)
 
-**Autor:** Turno (Lider de turno)
+**Autor:** Miguel Espinoza
 **Fecha:** 2026-08-19
 **Repositorio:** dapa2w — rama `feature/pipas-catalogos`
 **Objetivo del dia:** Pantallas de catálogos del módulo de pipas (**solo frontend**): alta/edición de
