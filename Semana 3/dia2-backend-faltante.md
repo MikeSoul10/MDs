@@ -386,6 +386,7 @@ class ReporteTiemposTrasladoRow(BaseModel):
     entregas: int = 0
     duracion_promedio_min: Optional[float] = None
     km_recorridos: float = 0
+    ubicaciones_reportadas: int = 0
 
 class ReporteTiemposTrasladoResponse(BaseModel):
     desde: Optional[date] = None
@@ -397,8 +398,7 @@ Paso 2 — **Query** (solo lectura, se ejecuta directo sobre la sesión). En
 `backend/app/api/v1/reportes.py`:
 
 ```python
-from datetime import date
-from decimal import Decimal
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -432,27 +432,29 @@ async def reporte_combustible(
     if fecha_desde:
         condiciones.append(RegistroCombustibleModel.reg_com_fecha >= fecha_desde)
     if fecha_hasta:
-        condiciones.append(RegistroCombustibleModel.reg_com_fecha < fecha_hasta.replace(day=28) + __import__('datetime').timedelta(days=1))  # fin de día
+        # comparar contra el día siguiente para incluir todo el día (Postgres):
+        condiciones.append(RegistroCombustibleModel.reg_com_fecha < fecha_hasta + timedelta(days=1))
     if vehiculo_id:
         condiciones.append(RegistroCombustibleModel.reg_com_vhe_id == vehiculo_id)
 
+    fecha_col = func.date(RegistroCombustibleModel.reg_com_fecha)  # sin fuse de string labels
     query = (
         select(
-            func.date(RegistroCombustibleModel.reg_com_fecha).label("fecha"),
-            RegistroCombustibleModel.reg_com_vhe_id,
+            fecha_col.label("fecha"),
+            RegistroCombustibleModel.reg_com_vhe_id.label("vhe_id"),
             func.coalesce(func.sum(RegistroCombustibleModel.reg_com_lts), 0).label("lts"),
             func.coalesce(func.sum(RegistroCombustibleModel.reg_com_cost), 0).label("cost"),
             func.count().label("n"),
         )
         .where(*condiciones)
-        .group_by("fecha", RegistroCombustibleModel.reg_com_vhe_id)
-        .order_by("fecha")
+        .group_by(fecha_col, RegistroCombustibleModel.reg_com_vhe_id)
+        .order_by(fecha_col)
     )
     result = await db.execute(query)
     filas = [
         ReporteCombustibleRow(
             fecha=row.fecha,
-            vhe_id=row.reg_com_vhe_id,
+            vhe_id=row.vhe_id,
             total_lts=float(row.lts),
             total_cost=float(row.cost),
             num_registros=row.n,
@@ -468,9 +470,9 @@ async def reporte_combustible(
     )
 ```
 
-> Sugerencia (limpiar el hack del fin de día): si no funciona el `replace(day=28)`, usa
-> `fecha_hasta + timedelta(days=1)` con `import` al tope del archivo. Verificar contra los datos
-> reales en la sección de verificación.
+> **Ojo (evita estos bugs):** comparar `reg_com_fecha < fecha_hasta` sin sumar un día EXCLUYE los
+> registros del mismo día `fecha_hasta`. También evita `group_by("fecha")`/`order_by("fecha")` con
+> string labels si tu driver los rechaza; usa la columna `func.date(...)` (como arriba).
 
 **DoD B2.3:** el reporte agrupa **por día** los litros/costo, respeta `fecha_desde`/`fecha_hasta`/
 `vehiculo_id` y suma totales.
@@ -483,11 +485,9 @@ async def reporte_combustible(
 `Entregada`), **duración promedio** y **km recorridos** (de `rutas_solicitud`). `ubicaciones_pipa`
 se usa para totalizar ubicaciones GPS reportadas por día (la sprint lo menciona como fuente).
 
-Paso 1 — En `backend/app/api/v1/reportes.py`, agregar:
+Paso 1 — En `backend/app/api/v1/reportes.py`, agregar (código completo y funcional):
 
 ```python
-from sqlalchemy import func, select, cast, Date
-
 @router.get("/tiempos_traslado", response_model=ReporteTiemposTrasladoResponse)
 async def reporte_tiempos_traslado(
     fecha_desde: date | None = Query(None),
@@ -495,61 +495,74 @@ async def reporte_tiempos_traslado(
     db: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    # Entregas por día
+    """Por día: entregas (solicitudpipas), duración/km (rutas_solicitud) y GPS (ubicacionespipa)."""
+    desde = fecha_desde or date(1970, 1, 1)
+    hasta = (fecha_hasta or date(2100, 1, 1)) + timedelta(days=1)  # incluye todo el día final
+
+    # 1) Entregas por día
+    fecha_entregas = func.date(SolicitudPipaModel.spp_horaentrega)
     q_entregas = (
         select(
-            func.date(SolicitudPipaModel.spp_horaentrega).label("fecha"),
+            fecha_entregas.label("fecha"),
             func.count().label("entregas"),
         )
         .where(SolicitudPipaModel.spp_estatus == "Entregada")
-        .group_by("fecha")
-        .order_by("fecha")
+        .where(SolicitudPipaModel.spp_horaentrega >= desde)
+        .where(SolicitudPipaModel.spp_horaentrega < hasta)
+        .group_by(fecha_entregas)
+        .order_by(fecha_entregas)
     )
-    if fecha_desde:
-        q_entregas = q_entregas.where(SolicitudPipaModel.spp_horaentrega >= fecha_desde)
-    if fecha_hasta:
-        q_entregas = q_entregas.where(SolicitudPipaModel.spp_horaentrega < fecha_hasta)
 
-    entregas = {(r.fecha, r.entregas) for r in (await db.execute(q_entregas)).all()}
-
-    # Duración promedio y km por día (rutas_solicitud)
+    # 2) Duración promedio y km por día (rutas_solicitud)
+    fecha_rutas = func.date(RutaSolicitudModel.rtsol_creado)
     q_rutas = (
         select(
-            func.date(RutaSolicitudModel.rtsol_creado).label("fecha"),
+            fecha_rutas.label("fecha"),
             func.avg(RutaSolicitudModel.rtsol_duracion_min).label("dur"),
             func.coalesce(func.sum(RutaSolicitudModel.rtsol_distancia_km), 0).label("km"),
         )
-        .group_by("fecha")
-        .order_by("fecha")
+        .where(RutaSolicitudModel.rtsol_creado >= desde)
+        .where(RutaSolicitudModel.rtsol_creado < hasta)
+        .group_by(fecha_rutas)
+        .order_by(fecha_rutas)
     )
-    if fecha_desde:
-        q_rutas = q_rutas.where(RutaSolicitudModel.rtsol_creado >= fecha_desde)
-    if fecha_hasta:
-        q_rutas = q_rutas.where(RutaSolicitudModel.rtsol_creado < fecha_hasta)
 
-    filas = []
-    for r, s in zip((await db.execute(q_rutas)).all(),
-                    (await db.execute(select(func.date(UbicacionPipaModel.ubp_timestamp).label("fecha"),
-                                             func.count().label("n"))
-                                       .group_by("fecha")).all())):
-        pass  # ver nota: se fusiona en un solo loop abajo
-    # ... fusionar entregas + rutas por fecha (ver Paso 2)
-    return ReporteTiemposTrasladoResponse(desde=fecha_desde, hasta=fecha_hasta, filas=filas)
-```
+    # 3) Ubicaciones GPS reportadas por día (ubicacionespipa)
+    fecha_ubp = func.date(UbicacionPipaModel.ubp_timestamp)
+    q_ubicacion = (
+        select(
+            fecha_ubp.label("fecha"),
+            func.count().label("n"),
+        )
+        .where(UbicacionPipaModel.ubp_timestamp >= desde)
+        .where(UbicacionPipaModel.ubp_timestamp < hasta)
+        .group_by(fecha_ubp)
+    )
 
-Paso 2 — **Fusión por fecha** en un solo diccionario (ejemplo limpio):
-
-```python
+    # Fusionar todo por fecha en un solo dict
     por_dia: dict[date, ReporteTiemposTrasladoRow] = {}
     for r in (await db.execute(q_rutas)).all():
-        por_dia.setdefault(r.fecha, ReporteTiemposTrasladoRow(fecha=r.fecha)).duracion_promedio_min = float(r.dur) if r.dur is not None else None
-        por_dia[r.fecha].km_recorridos = float(r.km) or 0
+        fila = por_dia.setdefault(r.fecha, ReporteTiemposTrasladoRow(fecha=r.fecha))
+        fila.duracion_promedio_min = float(r.dur) if r.dur is not None else None
+        fila.km_recorridos = float(r.km) or 0
     for r in (await db.execute(q_entregas)).all():
         por_dia.setdefault(r.fecha, ReporteTiemposTrasladoRow(fecha=r.fecha)).entregas = r.entregas
-    filas = [por_dia[f] for f in sorted(por_dia)]
+    for r in (await db.execute(q_ubicacion)).all():
+        por_dia.setdefault(r.fecha, ReporteTiemposTrasladoRow(fecha=r.fecha)).ubicaciones_reportadas = r.n
+
+    return ReporteTiemposTrasladoResponse(
+        desde=fecha_desde,
+        hasta=fecha_hasta,
+        filas=[por_dia[f] for f in sorted(por_dia)],
+    )
 ```
 
-Paso 3 — Registrar TODOS los routers nuevos (pozos, combustible, reportes) en `router.py`:
+> **Ojo (evita estos bugs):** el `spp_estatus == "Entregada"` usa el string exacto del enum.
+> Las comparaciones de fecha usan `>= desde` y `< hasta+1día`; si no sumas el día, excluyes las
+> entregas del último día filtrado. Las 3 queries se fusionan por fecha con `setdefault` (un día
+> puede tener entregas SIN ruta y viceversa).
+
+Paso 2 — Registrar TODOS los routers nuevos (pozos, combustible, reportes) en `router.py`:
 
 ```python
 from app.api.v1.pozos import router as pozos_router
@@ -561,11 +574,8 @@ api_v1_router.include_router(combustible_router)
 api_v1_router.include_router(reportes_router)
 ```
 
-**DoD B2.4:** el reporte entrega por día: `entregas`, `duracion_promedio_min` y `km_recorridos`.
-
-> El código B2.4 es **guía de referencia**: el objetivo es que el endpoint calcule desde
-> `rutas_solicitud` (dur/km), `solicitudpipas` (entregas) y `ubicaciones_pipa`. Si algún query
-> concreto falla en tu Postgres, ajusta la consulta manteniendo el contrato del schema.
+**DoD B2.4:** el reporte entrega por día: `entregas`, `duracion_promedio_min`, `km_recorridos` y
+`ubicaciones_reportadas`.
 
 ---
 
@@ -591,8 +601,9 @@ Chequeos con token (login `admin`/`admin123` para obtener `access_token`):
    `GET /combustible?vehiculo_id=1` → historial ordenado.
 3. `GET /reportes/combustible` → filas por día con `total_lts`/`total_cost`/`num_registros`;
    probar con `fecha_desde`/`fecha_hasta` y `vehiculo_id`.
-4. `GET /reportes/tiempos_traslado` → filas por día con `entregas`, `duracion_promedio_min` y
-   `km_recorridos` (requiere solicitudes `Entregada` y filas en `rutas_solicitud`).
+4. `GET /reportes/tiempos_traslado` → filas por día con `entregas`, `duracion_promedio_min`,
+   `km_recorridos` y `ubicaciones_reportadas` (requiere solicitudes `Entregada` y filas en
+   `rutas_solicitud`).
 5. `/docs` muestra los tags `Pozos`, `Combustible` y `Reportes` sin regresiones a `/docs` anterior.
 
 ## DoD del día + commit
